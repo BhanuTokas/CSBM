@@ -130,7 +130,7 @@ def run_linear_probe(
             logger.debug(f"Concept {concept_idx}: no samples found, skipping.")
             continue
 
-        clf = LogisticRegression(max_iter=300, C=1.0, n_jobs=-1, verbose=0)
+        clf = LogisticRegression(max_iter=300, C=1.0, verbose=0)
         clf.fit(X_train, y_train)
         preds = clf.predict(X_val)
         iou = jaccard_score(y_val, preds, zero_division=0)

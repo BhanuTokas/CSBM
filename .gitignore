@@ -219,4 +219,4 @@ __marimo__/
 
 # Project Custom
 slurm_scripts/
-
+broden_experiments/checkpoints*

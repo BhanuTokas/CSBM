@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 def compute_batch_iou(
-    logits: torch.Tensor,   # (B, C, H, W)
-    target: torch.Tensor,   # (B, C, H, W)
-    valid: torch.Tensor,    # (B, C) bool
+    logits: torch.Tensor,  # (B, C, H, W)
+    target: torch.Tensor,  # (B, C, H, W)
+    valid: torch.Tensor,  # (B, C) bool
     threshold: float = 0.5,
 ) -> torch.Tensor:
     """
@@ -40,9 +40,9 @@ def compute_batch_iou(
     """
     preds = (torch.sigmoid(logits) > threshold).float()  # (B, C, H, W)
 
-    intersection = (preds * target).sum(dim=(2, 3))       # (B, C)
-    union = (preds + target).clamp(max=1).sum(dim=(2, 3)) # (B, C)
-    iou = intersection / (union + 1e-6)                   # (B, C)
+    intersection = (preds * target).sum(dim=(2, 3))  # (B, C)
+    union = (preds + target).clamp(max=1).sum(dim=(2, 3))  # (B, C)
+    iou = intersection / (union + 1e-6)  # (B, C)
 
     # Average only over supervised pairs
     valid_f = valid.float()
@@ -50,9 +50,9 @@ def compute_batch_iou(
 
 
 def compute_per_concept_iou(
-    logits: torch.Tensor,   # (B, C, H, W)
-    target: torch.Tensor,   # (B, C, H, W)
-    valid: torch.Tensor,    # (B, C) bool
+    logits: torch.Tensor,  # (B, C, H, W)
+    target: torch.Tensor,  # (B, C, H, W)
+    valid: torch.Tensor,  # (B, C) bool
     num_concepts: int,
     threshold: float = 0.5,
 ) -> dict:
@@ -61,13 +61,13 @@ def compute_per_concept_iou(
     """
     preds = (torch.sigmoid(logits) > threshold).float()
 
-    intersection = (preds * target).sum(dim=(2, 3))       # (B, C)
-    union = (preds + target).clamp(max=1).sum(dim=(2, 3)) # (B, C)
-    iou = intersection / (union + 1e-6)                   # (B, C)
+    intersection = (preds * target).sum(dim=(2, 3))  # (B, C)
+    union = (preds + target).clamp(max=1).sum(dim=(2, 3))  # (B, C)
+    iou = intersection / (union + 1e-6)  # (B, C)
 
     per_concept = {}
     for c in range(num_concepts):
-        valid_c = valid[:, c]           # (B,) bool
+        valid_c = valid[:, c]  # (B,) bool
         if not valid_c.any():
             continue
         per_concept[c] = iou[valid_c, c].mean().item()
@@ -155,13 +155,13 @@ def _collect_features(
     X_list, y_list = [], []
 
     for batch in loader:
-        valid = batch["valid"]          # (B, C) bool
+        valid = batch["valid"]  # (B, C) bool
         # Skip batches where no sample has this concept supervised
         if not valid[:, concept_idx].any():
             continue
 
         images = batch["image"].to(device)
-        target = batch["target"]        # (B, C, H, W)
+        target = batch["target"]  # (B, C, H, W)
 
         with torch.no_grad():
             features = model.extract_dino_features(images)  # (B, D, H_p, W_p)
@@ -171,12 +171,7 @@ def _collect_features(
         # Only use samples where this concept is supervised
         valid_c = valid[:, concept_idx]  # (B,) bool
 
-        feat_flat = (
-            features[valid_c]
-            .permute(0, 2, 3, 1)
-            .reshape(-1, D)
-            .cpu().numpy()
-        )
+        feat_flat = features[valid_c].permute(0, 2, 3, 1).reshape(-1, D).cpu().numpy()
         mask_flat = (
             target[valid_c, concept_idx]  # (n_valid, H, W)
             .reshape(-1)

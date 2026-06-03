@@ -15,7 +15,6 @@ import numpy as np
 from PIL import Image
 from transformers import CLIPProcessor, CLIPModel
 
-
 # ── Google 10k word list ───────────────────────────────────────────────────────
 
 GOOGLE_10K_URL = (
@@ -23,12 +22,14 @@ GOOGLE_10K_URL = (
     "master/google-10000-english-no-swears.txt"
 )
 
+
 def fetch_google_10k(url: str = GOOGLE_10K_URL) -> list[str]:
     """
     Download the Google 10k word list, strip proper nouns (names, places, brands),
     and return only common English words that appear in WordNet.
     """
     import nltk
+
     nltk.download("wordnet", quiet=True)
     from nltk.corpus import wordnet as wn
 
@@ -51,13 +52,18 @@ def fetch_google_10k(url: str = GOOGLE_10K_URL) -> list[str]:
     # Keep only words that WordNet knows — this drops proper nouns cleanly
     filtered = [w for w in raw if w in wordnet_words]
 
-    print(f"  Fetched {len(raw)} words, kept {len(filtered)} after removing proper nouns.")
+    print(
+        f"  Fetched {len(raw)} words, kept {len(filtered)} after removing proper nouns."
+    )
     return filtered
 
 
 # ── Model loading ──────────────────────────────────────────────────────────────
 
-def load_clip(model_name: str = "openai/clip-vit-base-patch32", device: str | None = None):
+
+def load_clip(
+    model_name: str = "openai/clip-vit-base-patch32", device: str | None = None
+):
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     model = CLIPModel.from_pretrained(model_name).to(device)
     processor = CLIPProcessor.from_pretrained(model_name)
@@ -67,16 +73,18 @@ def load_clip(model_name: str = "openai/clip-vit-base-patch32", device: str | No
 
 # ── Image encoding ─────────────────────────────────────────────────────────────
 
+
 def encode_image(image_path: str, model, processor, device) -> np.ndarray:
     """Return the raw (un-normalised) CLIP image embedding as a 1-D numpy array."""
     image = Image.open(image_path).convert("RGB")
     inputs = processor(images=image, return_tensors="pt").to(device)
     with torch.no_grad():
-        features = model.get_image_features(**inputs)   # (1, D)
-    return features.squeeze(0).cpu().numpy()            # (D,)
+        features = model.get_image_features(**inputs)  # (1, D)
+    return features.squeeze(0).cpu().numpy()  # (D,)
 
 
 # ── Text encoding (batched) ────────────────────────────────────────────────────
+
 
 def build_word_dict(
     words: list[str],
@@ -92,21 +100,27 @@ def build_word_dict(
     all_vecs = []
     for i in range(0, len(words), batch_size):
         batch = words[i : i + batch_size]
-        inputs = processor(text=batch, return_tensors="pt", padding=True, truncation=True).to(device)
+        inputs = processor(
+            text=batch, return_tensors="pt", padding=True, truncation=True
+        ).to(device)
         with torch.no_grad():
-            feats = model.get_text_features(**inputs)           # (B, D)
+            feats = model.get_text_features(**inputs)  # (B, D)
         # Normalise each vector to unit length
         feats = feats / feats.norm(dim=-1, keepdim=True)
         all_vecs.append(feats.cpu().numpy())
         if (i // batch_size) % 5 == 0:
-            print(f"  … encoded {min(i + batch_size, len(words))}/{len(words)} words", end="\r")
+            print(
+                f"  … encoded {min(i + batch_size, len(words))}/{len(words)} words",
+                end="\r",
+            )
 
     print()  # newline after progress
-    unit_vecs = np.concatenate(all_vecs, axis=0)    # (N, D)
+    unit_vecs = np.concatenate(all_vecs, axis=0)  # (N, D)
     return dict(zip(words, unit_vecs))
 
 
 # ── Greedy matching pursuit decomposition ─────────────────────────────────────
+
 
 def decompose_pursuit(
     delta_z: np.ndarray,
@@ -131,35 +145,37 @@ def decompose_pursuit(
         "explained":     float,   # fraction of original norm explained so far
       }
     """
-    words  = list(word_dict.keys())
-    matrix = np.stack(list(word_dict.values()))   # (N, D)
-    used   = set()
+    words = list(word_dict.keys())
+    matrix = np.stack(list(word_dict.values()))  # (N, D)
+    used = set()
 
-    residual      = delta_z.copy().astype(np.float64)
+    residual = delta_z.copy().astype(np.float64)
     original_norm = np.linalg.norm(residual)
-    steps         = []
+    steps = []
 
     for step in range(1, n_steps + 1):
-        dots = matrix @ residual          # (N,) — project residual onto all words
+        dots = matrix @ residual  # (N,) — project residual onto all words
         for idx in used:
-            dots[idx] = 0.0               # mask already-used words
+            dots[idx] = 0.0  # mask already-used words
 
-        best_idx  = int(np.argmax(np.abs(dots)))
+        best_idx = int(np.argmax(np.abs(dots)))
         best_word = words[best_idx]
-        coeff     = float(dots[best_idx])
+        coeff = float(dots[best_idx])
 
-        residual -= coeff * matrix[best_idx]   # subtract this component
+        residual -= coeff * matrix[best_idx]  # subtract this component
 
         residual_norm = float(np.linalg.norm(residual))
-        explained     = 1.0 - residual_norm / original_norm
+        explained = 1.0 - residual_norm / original_norm
 
-        steps.append({
-            "step":          step,
-            "word":          best_word,
-            "coeff":         coeff,
-            "residual_norm": residual_norm,
-            "explained":     explained,
-        })
+        steps.append(
+            {
+                "step": step,
+                "word": best_word,
+                "coeff": coeff,
+                "residual_norm": residual_norm,
+                "explained": explained,
+            }
+        )
         used.add(best_idx)
 
     return steps
@@ -167,7 +183,10 @@ def decompose_pursuit(
 
 # ── (kept for reference) flat dot-product decompose ───────────────────────────
 
-def decompose(delta_z: np.ndarray, word_dict: dict[str, np.ndarray]) -> dict[str, float]:
+
+def decompose(
+    delta_z: np.ndarray, word_dict: dict[str, np.ndarray]
+) -> dict[str, float]:
     """
     Express delta_z as a linear combination of the word unit vectors.
 
@@ -179,12 +198,13 @@ def decompose(delta_z: np.ndarray, word_dict: dict[str, np.ndarray]) -> dict[str
     Uses a vectorised matrix multiply for speed over the full 10k vocabulary.
     """
     words = list(word_dict.keys())
-    matrix = np.stack(list(word_dict.values()))     # (N, D)
-    coeffs = matrix @ delta_z                       # (N,)  — all dot products at once
+    matrix = np.stack(list(word_dict.values()))  # (N, D)
+    coeffs = matrix @ delta_z  # (N,)  — all dot products at once
     return dict(zip(words, coeffs.tolist()))
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
+
 
 def main(
     image_path_1: str,
@@ -226,7 +246,9 @@ def main(
     print()
 
     # Step-by-step table
-    print(f"  {'step':<6} {'word':<20} {'coeff':>10}  {'‖residual‖':>12}  {'explained':>10}")
+    print(
+        f"  {'step':<6} {'word':<20} {'coeff':>10}  {'‖residual‖':>12}  {'explained':>10}"
+    )
     print("  " + "─" * 64)
     for s in steps:
         bar = "▲" if s["coeff"] > 0 else "▼"
@@ -243,7 +265,7 @@ def main(
 if __name__ == "__main__":
 
     delta_z, word_dict, coefficients = main(
-        image_path_1="samples/test_lion_1.png",   # ← replace with your paths
+        image_path_1="samples/test_lion_1.png",  # ← replace with your paths
         image_path_2="samples/test_lion_2.jpg",
         n_steps=10,
     )

@@ -13,7 +13,6 @@ import torch.nn.functional as F
 import torchvision.transforms as T
 from .config import TrainConfig
 
-
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -22,12 +21,13 @@ log = logging.getLogger(__name__)
 
 MASK_CATEGORIES = {"color", "object", "material", "part"}
 WEAK_CATEGORIES = {"scene", "texture"}
-CATEGORY_ORDER  = ["object", "part", "material", "color", "scene", "texture"]
+CATEGORY_ORDER = ["object", "part", "material", "color", "scene", "texture"]
 
 
 # ---------------------------------------------------------------------------
 # Concept discovery
 # ---------------------------------------------------------------------------
+
 
 def get_concept_names(broden_path: str, num_concepts: int) -> list[str]:
     """
@@ -99,6 +99,7 @@ def get_concept_metadata(broden_path: str, concept_names: list[str]) -> list[dic
 # Dataset
 # ---------------------------------------------------------------------------
 
+
 class BrodenConceptDataset(Dataset):
     def __init__(
         self,
@@ -108,24 +109,27 @@ class BrodenConceptDataset(Dataset):
         config: TrainConfig,
         max_per_concept: int = 5000,
     ):
-        self.broden_path   = Path(broden_path)
+        self.broden_path = Path(broden_path)
         self.concept_names = concept_names
-        self.split         = split
-        self.mask_size     = config.mask_size
+        self.split = split
+        self.mask_size = config.mask_size
 
         # Metadata: category + pixel code for each concept
         self.concept_meta = get_concept_metadata(str(broden_path), concept_names)
 
-        self.img_transform = T.Compose([
-            T.Resize((config.image_size, config.image_size)),
-            T.ToTensor(),
-            T.Normalize(mean=[0.485, 0.456, 0.406],
-                        std=[0.229, 0.224, 0.225]),
-        ])
+        self.img_transform = T.Compose(
+            [
+                T.Resize((config.image_size, config.image_size)),
+                T.ToTensor(),
+                T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
 
         self.samples = self._build_samples(max_per_concept)
-        log.info(f"[{split}] {len(self.samples)} samples "
-                 f"across {len(concept_names)} concepts.")
+        log.info(
+            f"[{split}] {len(self.samples)} samples "
+            f"across {len(concept_names)} concepts."
+        )
 
     # ------------------------------------------------------------------
 
@@ -135,6 +139,7 @@ class BrodenConceptDataset(Dataset):
 
         # Group concepts by category so we scan index.csv once per category
         from collections import defaultdict
+
         cat_to_concepts: dict[str, list[int]] = defaultdict(list)
         for ci, meta in enumerate(self.concept_meta):
             cat_to_concepts[meta["category"]].append(ci)
@@ -186,10 +191,12 @@ class BrodenConceptDataset(Dataset):
         # Flatten to sample list
         samples = []
         for img_key, concept_labels in image_labels.items():
-            samples.append({
-                "img_path": self.broden_path / "images" / img_key,
-                "concept_labels": concept_labels,
-            })
+            samples.append(
+                {
+                    "img_path": self.broden_path / "images" / img_key,
+                    "concept_labels": concept_labels,
+                }
+            )
 
         return samples
 
@@ -214,7 +221,9 @@ class BrodenConceptDataset(Dataset):
         tensor = torch.from_numpy(combined).unsqueeze(0).unsqueeze(0)  # (1,1,H,W)
         return F.interpolate(
             tensor, size=(self.mask_size, self.mask_size), mode="nearest"
-        ).squeeze(0)  # (1, mask_size, mask_size)
+        ).squeeze(
+            0
+        )  # (1, mask_size, mask_size)
 
     # ------------------------------------------------------------------
 
@@ -227,7 +236,7 @@ class BrodenConceptDataset(Dataset):
         image = Image.open(sample["img_path"]).convert("RGB")
         image = self.img_transform(image)
 
-        target     = torch.zeros(len(self.concept_names), self.mask_size, self.mask_size)
+        target = torch.zeros(len(self.concept_names), self.mask_size, self.mask_size)
         valid_mask = torch.zeros(len(self.concept_names), dtype=torch.bool)
 
         for ci, entry in sample["concept_labels"].items():
@@ -244,37 +253,38 @@ class BrodenConceptDataset(Dataset):
 # Dataloaders
 # ---------------------------------------------------------------------------
 
+
 def build_dataloaders(
     config: TrainConfig,
     concept_names: list[str],
 ) -> tuple[DataLoader, DataLoader]:
     train_dataset = BrodenConceptDataset(
-        broden_path   = config.broden_path,
-        concept_names = concept_names,
-        split         = "train",
-        config        = config,
-        max_per_concept = config.max_per_concept,
+        broden_path=config.broden_path,
+        concept_names=concept_names,
+        split="train",
+        config=config,
+        max_per_concept=config.max_per_concept,
     )
     val_dataset = BrodenConceptDataset(
-        broden_path   = config.broden_path,
-        concept_names = concept_names,
-        split         = "val",
-        config        = config,
-        max_per_concept = config.max_per_concept,
+        broden_path=config.broden_path,
+        concept_names=concept_names,
+        split="val",
+        config=config,
+        max_per_concept=config.max_per_concept,
     )
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size  = config.batch_size,
-        shuffle     = True,
-        num_workers = config.num_workers,
-        pin_memory  = True,
+        batch_size=config.batch_size,
+        shuffle=True,
+        num_workers=config.num_workers,
+        pin_memory=True,
     )
     val_loader = DataLoader(
         val_dataset,
-        batch_size  = config.batch_size,
-        shuffle     = False,
-        num_workers = config.num_workers,
-        pin_memory  = True,
+        batch_size=config.batch_size,
+        shuffle=False,
+        num_workers=config.num_workers,
+        pin_memory=True,
     )
     return train_loader, val_loader
